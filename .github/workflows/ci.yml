@@ -1,0 +1,43 @@
+# fitlog-django CI — ruff + pytest on every push/PR.
+# Same philosophy as the Next.js repo's pipeline: a new CI step is
+# untested code, so every step here was run locally before landing.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint + Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Test (pytest)
+        run: pytest
+        env:
+          # Unit tests need no real services: SQLite fallback for the DB,
+          # and the JWT suite injects its own keypair (no JWKS fetch).
+          DJANGO_SECRET_KEY: "ci-only-test-key"

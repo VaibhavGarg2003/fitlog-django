@@ -1,0 +1,28 @@
+[project]
+name = "fitlog-django"
+version = "0.1.0"
+description = "FitLog's second service: share links, food admin, scheduled jobs"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [".venv", "staticfiles"]
+
+[tool.ruff.lint]
+# E/F = pycodestyle+pyflakes, I = import sorting, B = bugbear (real bugs),
+# DJ = django-specific gotchas, S = bandit security checks
+select = ["E", "F", "I", "B", "DJ", "S"]
+ignore = [
+    "S101", # assert used — pytest tests are built on assert
+]
+
+[tool.ruff.lint.per-file-ignores]
+"apps/*/tests/*" = ["S105", "S106"] # hardcoded "secrets" in tests are fixtures
+"config/settings/dev.py" = ["S105"] # the throwaway dev key is deliberate
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning"]
