@@ -12,6 +12,12 @@ SECRET_KEY = SECRET_KEY or "dev-only-insecure-key-do-not-deploy"  # noqa: F405
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
+# Local Next.js dev server may call the API cross-origin.
+CORS_ALLOWED_ORIGINS = [  # noqa: F405
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 # Dev convenience: plain static storage (no manifest hashing on reload),
 # and whitenoise serving straight from app dirs — no collectstatic needed,
 # and no "No directory at staticfiles/" warning.

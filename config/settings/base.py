@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "rest_framework",
+    "corsheaders",
     # FitLog apps
     "apps.core",
     "apps.sharing",
@@ -51,6 +52,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # CORS must sit high — above CommonMiddleware — so it can answer the
+    # browser's preflight OPTIONS before anything else runs.
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -119,6 +123,16 @@ SUPABASE_JWKS_URL = (
     f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
 )
 SUPABASE_JWT_AUDIENCE = "authenticated"
+
+# ── CORS ────────────────────────────────────────────────────────
+# The Next.js app (a DIFFERENT origin) calls the share-links API from the
+# browser, so the exact Vercel origin(s) must be allow-listed. Env-driven
+# so the real URL is a deploy-time value, never a code change:
+#   CORS_ALLOWED_ORIGINS=https://fitlog.vercel.app,https://preview-….vercel.app
+# The PUBLIC GET /api/share-links/<slug> is same-origin (rendered by the
+# Next.js server), so CORS mainly matters for create/list/revoke/copy.
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_HEADERS = ["authorization", "content-type"]
 
 # ── Auth / i18n / static ────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [

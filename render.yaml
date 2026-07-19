@@ -1,0 +1,34 @@
+# Render Blueprint — fitlog-django
+# ══════════════════════════════════
+# One always-on web service on Render's free tier. Deploy via the Render
+# dashboard: New → Blueprint → pick this repo. Secrets (sync:false) are
+# pasted in the dashboard, never committed here.
+#
+# The service spins down after ~15 min idle (free tier); the GitHub Actions
+# keepalive ping blunts the cold start — acceptable for share-link traffic.
+
+services:
+  - type: web
+    name: fitlog-django
+    runtime: python
+    plan: free
+    region: singapore # closest Render region to India
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    healthCheckPath: /api/healthz
+    envVars:
+      # Non-secret, safe to commit — force prod settings + pin Python.
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # ── Secrets — set these in the Render dashboard (sync:false) ──
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: DATABASE_URL # prod Supabase DIRECT connection + ?sslmode=require
+        sync: false
+      - key: SUPABASE_URL # prod project URL (drives JWT verification)
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS # the Next.js Vercel origin(s), comma-separated
+        sync: false
