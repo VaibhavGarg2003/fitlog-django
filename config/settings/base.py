@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     "rest_framework",
     # FitLog apps
     "apps.core",
+    "apps.sharing",
+    "apps.foods",
 ]
 
 MIDDLEWARE = [
@@ -101,6 +103,11 @@ REST_FRAMEWORK = {
         "apps.core.authentication.SupabaseJWTAuthentication",
     ],
     "UNAUTHENTICATED_USER": None,
+    # Abuse control: link CREATION is the scarce resource (doc 06 hidden
+    # requirement 5) — viewing/listing is not throttled here.
+    "DEFAULT_THROTTLE_RATES": {
+        "share-create": "20/day",
+    },
 }
 
 # ── Supabase (JWT verification) ─────────────────────────────────

@@ -22,7 +22,7 @@ ignore = [
 "config/settings/dev.py" = ["S105"] # the throwaway dev key is deliberate
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.dev"
+DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 addopts = "-q"
 filterwarnings = ["error::DeprecationWarning"]

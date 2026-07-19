@@ -63,6 +63,11 @@ class SupabaseUser:
     def is_anonymous(self) -> bool:
         return False
 
+    @property
+    def pk(self) -> str:
+        # DRF's ScopedRateThrottle keys the rate-limit bucket on user.pk.
+        return self.id
+
     def __str__(self) -> str:
         return f"SupabaseUser({self.id})"
 
