@@ -15,7 +15,10 @@ services:
     region: singapore # closest Render region to India
     branch: main
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application"
+    # Bind to 0.0.0.0 (accept external traffic, not just localhost) on the
+    # port Render assigns via $PORT — gunicorn's 127.0.0.1:8000 default is
+    # unreachable from Render's proxy and fails the health check.
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
     healthCheckPath: /api/healthz
     envVars:
       # Non-secret, safe to commit — force prod settings + pin Python.

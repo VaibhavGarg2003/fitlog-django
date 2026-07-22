@@ -109,6 +109,13 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
     # Abuse control: link CREATION is the scarce resource (doc 06 hidden
     # requirement 5) — viewing/listing is not throttled here.
+    #
+    # BEST-EFFORT, not a hard guarantee: DRF's default throttle counts in
+    # LocMemCache, which is per-process and non-atomic. A single free-tier
+    # instance makes the 20/day effectively hold, but it can be exceeded
+    # under a restart, a race, or a future multi-worker/replica deploy. If
+    # this ever needs to be a hard cap, point CACHES at the Upstash Redis
+    # we already run (shared, atomic INCR) and the same scope applies.
     "DEFAULT_THROTTLE_RATES": {
         "share-create": "20/day",
     },

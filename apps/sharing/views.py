@@ -28,12 +28,24 @@ from rest_framework.views import APIView
 from .models import FitLogUser, ShareLink, WorkoutTemplate
 from .serializers import CreateShareLinkSerializer
 
+# The Prisma WorkoutSplit enum values — a copied template's split is only
+# written back if it's one of these (guards the Postgres enum column).
+VALID_SPLIT_TYPES = frozenset(
+    {"PPL", "UPPER_LOWER", "BRO", "FULL_BODY", "CUSTOM"}
+)
+
+
+# share_links.owner_first_name is VARCHAR(40); Prisma's users.name is
+# unbounded TEXT, so a 40+ char first name would 500 the insert on Postgres
+# (SQLite silently allows it, which is why tests must cover this explicitly).
+FIRST_NAME_MAX = 40
+
 
 def _first_name(user_id: str) -> str:
     row = FitLogUser.objects.filter(id=user_id).only("name").first()
     if not row or not row.name:
         return ""
-    return row.name.split()[0]
+    return row.name.split()[0][:FIRST_NAME_MAX]
 
 
 def _link_state(link: ShareLink) -> str:
@@ -94,7 +106,7 @@ class ShareLinkListCreateView(APIView):
             "exercises": template.exercises,
         }
 
-        link = ShareLink.objects.create(
+        link = self._create_with_unique_slug(
             owner_user_id=request.user.id,
             owner_first_name=_first_name(request.user.id),
             kind=data["kind"],
@@ -107,6 +119,23 @@ class ShareLinkListCreateView(APIView):
             _serialize_own_link(link) | {"slug": link.slug},
             status=status.HTTP_201_CREATED,
         )
+
+    @staticmethod
+    def _create_with_unique_slug(**fields) -> ShareLink:
+        # Slugs have 64 bits of entropy — a collision is astronomically
+        # unlikely, but if one ever happens the unique index would 500 the
+        # user. Retry with a fresh slug a few times instead. `generate_slug`
+        # runs again per attempt because it's the field default.
+        from django.db import transaction
+
+        for attempt in range(5):
+            try:
+                with transaction.atomic():
+                    return ShareLink.objects.create(**fields)
+            except IntegrityError:
+                if attempt == 4:
+                    raise
+        raise IntegrityError("Could not generate a unique slug")
 
 
 class ShareLinkDetailView(APIView):
@@ -188,16 +217,19 @@ class ShareLinkCopyView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Preserve the snapshot's split type, but only if it's a currently
+        # valid WorkoutSplit — never write an unknown string into the
+        # Postgres enum column (PgEnumField adds the required ::cast).
+        raw_split = link.payload.get("splitType")
+        split_type = raw_split if raw_split in VALID_SPLIT_TYPES else None
+
         now = timezone.now()
         try:
             template = WorkoutTemplate.objects.create(
                 id=str(uuid.uuid4()),
                 user_id=request.user.id,
                 name=link.title[:100],
-                # split_type deliberately NULL on copies — the value is
-                # still visible in the payload; skipping the enum write
-                # keeps the cross-service insert simple.
-                split_type=None,
+                split_type=split_type,
                 exercises=link.payload.get("exercises", []),
                 created_at=now,
                 updated_at=now,

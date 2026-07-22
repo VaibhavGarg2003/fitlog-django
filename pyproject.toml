@@ -26,3 +26,6 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 addopts = "-q"
 filterwarnings = ["error::DeprecationWarning"]
+markers = [
+    "postgres: integration tests that need a real Postgres (skipped unless INTEGRATION_DATABASE_URL is set)",
+]

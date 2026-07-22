@@ -41,3 +41,51 @@ jobs:
           # Unit tests need no real services: SQLite fallback for the DB,
           # and the JWT suite injects its own keypair (no JWKS fetch).
           DJANGO_SECRET_KEY: "ci-only-test-key"
+
+  # Postgres-specific guarantees (RLS denial, FK cascade, enum columns)
+  # can't be tested on SQLite — this job spins up a real Postgres,
+  # recreates the Prisma-owned schema, runs our migrations, then runs the
+  # @postgres tests. Keeps the fast unit job (above) free of a DB service.
+  integration:
+    name: Postgres integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitlog_itest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SECRET_KEY: "ci-only-test-key"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/fitlog_itest"
+      INTEGRATION_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/fitlog_itest"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Bootstrap the Prisma-owned schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/bootstrap_prisma_schema.sql
+
+      - name: Run Django migrations (creates share_links + RLS + FK)
+        run: python manage.py migrate --no-input
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.dev
+
+      - name: Run Postgres integration tests
+        run: pytest -m postgres -p no:cacheprovider
