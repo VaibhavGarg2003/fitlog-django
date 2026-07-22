@@ -29,7 +29,14 @@ services:
       # ── Secrets — set these in the Render dashboard (sync:false) ──
       - key: DJANGO_SECRET_KEY
         sync: false
-      - key: DATABASE_URL # prod Supabase DIRECT connection + ?sslmode=require
+      # SESSION POOLER (host "*.pooler.supabase.com", port 5432, username
+      # "postgres.<project-ref>") — NOT the direct connection. The direct
+      # hostname (db.<ref>.supabase.co) resolves ONLY to an IPv6 address;
+      # Render's free tier has no IPv6 egress, so it cannot reach it at
+      # runtime. The pooler resolves to real IPv4 addresses. Session mode
+      # (not the 6543 transaction mode) is Supabase's own recommendation
+      # for a persistent server process like this one (vs. serverless).
+      - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL # prod project URL (drives JWT verification)
         sync: false
