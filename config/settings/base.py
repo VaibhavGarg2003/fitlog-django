@@ -125,7 +125,11 @@ REST_FRAMEWORK = {
 # The Next.js app and Django trust the SAME identity provider. Django
 # verifies Supabase's asymmetric JWT signatures against the project's
 # public JWKS — no passwords, no second login, no session sync.
-SUPABASE_URL = env("SUPABASE_URL", default="")
+# .strip() defends against a trailing newline/space in a dashboard-set value:
+# a stray "\n" makes the JWKS host malformed ("...supabase.co\n"), urllib
+# rejects the fetch with InvalidURL, and — since that is NOT a jwt.PyJWTError —
+# it escapes the auth handler and 500s every authenticated call. (D5 prod bug.)
+SUPABASE_URL = env("SUPABASE_URL", default="").strip()
 SUPABASE_JWKS_URL = (
     f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
 )
