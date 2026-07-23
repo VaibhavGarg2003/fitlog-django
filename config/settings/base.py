@@ -160,3 +160,30 @@ STORAGES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ── Logging ─────────────────────────────────────────────────────
+# Django's built-in `django.request` logger routes 500 tracebacks to the
+# console handler ONLY under `require_debug_true`. In production (DEBUG=False)
+# with no Sentry and no ADMINS, an unhandled view exception would therefore be
+# swallowed — the access log shows "500" but the traceback goes nowhere. Send
+# it to stdout so the platform (Render) captures it. Applies in every env;
+# harmless in dev (dev already prints tracebacks).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {"format": "[{levelname}] {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        # ERROR + traceback for any unhandled request exception.
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
