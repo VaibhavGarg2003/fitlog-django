@@ -4,8 +4,11 @@
 # dashboard: New → Blueprint → pick this repo. Secrets (sync:false) are
 # pasted in the dashboard, never committed here.
 #
-# The service spins down after ~15 min idle (free tier); the GitHub Actions
-# keepalive ping blunts the cold start — acceptable for share-link traffic.
+# The service spins down after ~15 min without inbound traffic (free tier).
+# Live chat needs it awake: an external pinger (cron-job.org every ≤10 min,
+# UptimeRobot every 5 min with alerts) hits /api/healthz. One always-awake
+# free service uses ~744 of the workspace's 750 free hours/month — never run
+# a second always-awake free service in this workspace.
 
 services:
   - type: web
@@ -15,10 +18,21 @@ services:
     region: singapore # closest Render region to India
     branch: main
     buildCommand: "./build.sh"
-    # Bind to 0.0.0.0 (accept external traffic, not just localhost) on the
-    # port Render assigns via $PORT — gunicorn's 127.0.0.1:8000 default is
-    # unreachable from Render's proxy and fails the health check.
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
+    # ASGI (uvicorn) so the same process serves HTTP AND the live-chat
+    # WebSockets (apps.chat). Exactly ONE worker: the in-memory channel layer
+    # cannot cross processes (scaling out = channels_redis first).
+    #   --host 0.0.0.0 --port $PORT   reachable from Render's proxy
+    #   --proxy-headers               trust X-Forwarded-Proto (https) from Render
+    #   --lifespan off                Django/Channels don't use lifespan events
+    #   --ws-max-size 4096            clients only send tiny control frames
+    #   --ws-per-message-deflate false  compression costs ~50 KB RAM per socket
+    #   --timeout-graceful-shutdown 10  deploys close sockets promptly; clients
+    #                                 reconnect with backoff
+    startCommand: >-
+      uvicorn config.asgi:application --host 0.0.0.0 --port $PORT --workers 1
+      --proxy-headers --forwarded-allow-ips="*" --lifespan off --ws websockets
+      --ws-max-size 4096 --ws-per-message-deflate false
+      --timeout-graceful-shutdown 10
     healthCheckPath: /api/healthz
     envVars:
       # Non-secret, safe to commit — force prod settings + pin Python.
@@ -41,4 +55,12 @@ services:
       - key: SUPABASE_URL # prod project URL (drives JWT verification)
         sync: false
       - key: CORS_ALLOWED_ORIGINS # the Next.js Vercel origin(s), comma-separated
+        sync: false
+      # ── Live chat (apps.chat) — OFF unless both secrets are set ──
+      # Same values as the Next.js app's env; the two secrets must differ.
+      - key: CHAT_WS_TICKET_SECRET # ≥32 chars; verifies WebSocket tickets
+        sync: false
+      - key: CHAT_RELAY_SECRET # ≥32 chars; authenticates Next.js → relay calls
+        sync: false
+      - key: CHAT_WS_ALLOWED_ORIGINS # browser origins allowed to open the socket
         sync: false

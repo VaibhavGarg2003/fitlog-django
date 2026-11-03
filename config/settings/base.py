@@ -43,10 +43,12 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "corsheaders",
+    "channels",
     # FitLog apps
     "apps.core",
     "apps.sharing",
     "apps.foods",
+    "apps.chat",
 ]
 
 MIDDLEWARE = [
@@ -81,19 +83,25 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 # ── Database ────────────────────────────────────────────────────
 # DATABASE_URL points at the shared Supabase Postgres (dev project locally,
-# prod on Render). Django is a long-running SERVER, so unlike the Next.js
-# serverless functions it can hold persistent connections — CONN_MAX_AGE
-# keeps them alive between requests (the thing serverless couldn't do).
+# prod on Render).
+#
+# CONN_MAX_AGE = 0: the service now runs under ASGI (uvicorn, for live-chat
+# WebSockets). Django's docs say persistent connections should be disabled
+# in async mode — they are per-thread, and sync code under ASGI runs on
+# changing threads, so kept-alive connections leak instead of being reused.
+# Each request opens and closes its connection through the Supabase session
+# pooler, which does the pooling.
 #
 # Falls back to SQLite so the scaffold + unit tests run with no DB secrets.
 DATABASES = {
     "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
 }
 if DATABASES["default"]["ENGINE"] != "django.db.backends.sqlite3":
-    DATABASES["default"]["CONN_MAX_AGE"] = 60
+    DATABASES["default"]["CONN_MAX_AGE"] = 0
 
 # ── DRF ─────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
@@ -144,6 +152,52 @@ SUPABASE_JWT_AUDIENCE = "authenticated"
 # Next.js server), so CORS mainly matters for create/list/revoke/copy.
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_HEADERS = ["authorization", "content-type"]
+
+# ── Live chat (WebSocket doorbell) ──────────────────────────────
+# Next.js stores chat in Postgres; this service only pushes IDs-only hints to
+# open browser tabs. Two secrets shared with the Next.js app (never the same
+# value): one verifies WebSocket admission tickets, one authenticates relay
+# calls. Live chat is OFF unless both are set (≥ 32 characters each).
+CHAT_WS_TICKET_SECRET = env("CHAT_WS_TICKET_SECRET", default="").strip()
+CHAT_WS_TICKET_KID = env("CHAT_WS_TICKET_KID", default="1").strip()
+# During a key rotation, the previous key stays valid for verification.
+CHAT_WS_TICKET_PREVIOUS_SECRET = env(
+    "CHAT_WS_TICKET_PREVIOUS_SECRET", default=""
+).strip()
+CHAT_WS_TICKET_PREVIOUS_KID = env(
+    "CHAT_WS_TICKET_PREVIOUS_KID", default="0"
+).strip()
+CHAT_RELAY_SECRET = env("CHAT_RELAY_SECRET", default="").strip()
+CHAT_WS_AUDIENCE = env("CHAT_WS_AUDIENCE", default="fitlog-chat-ws").strip()
+CHAT_WS_ISSUER = "fitlog-web"
+# Browser origins allowed to open the socket (the Next.js app's origins).
+CHAT_WS_ALLOWED_ORIGINS = (
+    env.list("CHAT_WS_ALLOWED_ORIGINS", default=[]) or CORS_ALLOWED_ORIGINS
+)
+CHAT_LIVE_ENABLED = (
+    len(CHAT_WS_TICKET_SECRET) >= 32
+    and len(CHAT_RELAY_SECRET) >= 32
+    and CHAT_WS_TICKET_SECRET != CHAT_RELAY_SECRET
+)
+# Conservative starting caps for a 0.1-CPU free instance; raise after a
+# load test.
+CHAT_MAX_CONNECTIONS = env.int("CHAT_MAX_CONNECTIONS", default=50)
+CHAT_MAX_CONNECTIONS_PER_USER = env.int("CHAT_MAX_CONNECTIONS_PER_USER", default=5)
+# Sockets are re-admitted with a fresh ticket this often (bounds how long a
+# logged-out or deleted account's socket can linger).
+CHAT_LEASE_SECONDS = env.int("CHAT_LEASE_SECONDS", default=600)
+
+# One process ⇒ the in-memory channel layer is enough (and needs no Redis).
+# Channels' docs mark it "not for production" because it cannot cross
+# processes; with a single process there is nothing to cross. Scaling out
+# requires channels_redis. Small per-channel capacity: a slow tab drops
+# hints (it catches up over HTTP) instead of buffering without bound.
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "CONFIG": {"capacity": 50, "expiry": 30},
+    }
+}
 
 # ── Auth / i18n / static ────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [

@@ -82,3 +82,53 @@ suited to how it holds connections.
 ## Health check
 
 `GET https://<service>.onrender.com/api/healthz` → `{"status":"ok","service":"fitlog-django"}`
+
+## Live chat (apps.chat) — turning it on in production
+
+The service now runs **ASGI** (uvicorn, one process) so it can hold the
+live-chat WebSockets next to the share-link API. Chat messages live in
+Postgres (written by Next.js); this service only pushes IDs-only "something
+changed" hints to open tabs. If it is down or asleep, chat still works —
+clients poll every 30 s.
+
+Do these **in order**, rehearsing each on dev first:
+
+1. **Least-privilege DB role** (Next.js repo, `db/roles/005_django_runtime_role.sql`),
+   as `postgres`:
+   ```bash
+   psql "$SUPERUSER_DIRECT_URL" -v django_password="$(openssl rand -hex 32)" \
+     -f db/roles/005_django_runtime_role.sql
+   ```
+   Then change Render's `DATABASE_URL` to the **session pooler** with that role:
+   `postgresql://fitlog_django.<ref>:<pw>@<pooler-host>:5432/postgres`.
+   Deploy and check share links still work (create / open / copy) and that
+   `/admin` loads. Migrations keep running by hand **as postgres** (above).
+
+2. **Secrets** — the same two values on Render AND Vercel (≥32 chars, different):
+   `CHAT_WS_TICKET_SECRET`, `CHAT_RELAY_SECRET`. On Render also set
+   `CHAT_WS_ALLOWED_ORIGINS=https://<your app origin>` (comma-separated if
+   several). On Vercel also set `CHAT_WS_URL=wss://<render host>/ws/inbox/`
+   and `CHAT_RELAY_URL=https://<render host>/internal/chat/events`.
+
+3. **Deploy Django first** (new start command from `render.yaml`), check
+   `https://<render host>/api/chat/healthz` → `{"live": true, ...}`, then
+   redeploy Vercel.
+
+4. **Keep it awake** (free tier sleeps after 15 min without traffic):
+   - cron-job.org (free): GET `https://<render host>/api/healthz` every 10 min.
+   - UptimeRobot (free): HTTP monitor on the same URL every 5 min, email alerts.
+   One always-awake free service uses ~744 of the workspace's 750 free
+   hours/month — **never add a second always-awake free service** to this
+   Render workspace. Watch outbound bandwidth too (5 GB/month on Hobby).
+
+5. **Real-device check**: two phones, two accounts → a message appears on
+   the other phone within a second; turn on airplane mode → "Live updates
+   paused" → messages still arrive within ~30 s after reconnecting.
+
+**Rollback**: unset the two secrets on Render (live chat switches off, clients
+fall back to polling) or redeploy the previous commit. The share-link API is
+unaffected by either.
+
+**Limits** (deliberate, single process): 50 sockets total, 5 per user
+(`CHAT_MAX_CONNECTIONS*`) — raise only after a load test. Scaling to more
+than one process requires `channels_redis` first.
