@@ -15,13 +15,14 @@ from django.db import connection
 
 @pytest.fixture(scope="session")
 def django_db_setup(django_db_setup, django_db_blocker):
+    from apps.chat.models import ChatWsTicket
     from apps.foods.models import Food
     from apps.sharing.models import FitLogUser, WorkoutTemplate
 
     with django_db_blocker.unblock():
         existing = connection.introspection.table_names()
         with connection.schema_editor(atomic=False) as editor:
-            for model in (WorkoutTemplate, FitLogUser, Food):
+            for model in (WorkoutTemplate, FitLogUser, Food, ChatWsTicket):
                 if model._meta.db_table not in existing:
                     editor.create_model(model)
     yield

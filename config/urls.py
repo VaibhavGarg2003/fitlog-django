@@ -7,4 +7,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.core.urls")),
     path("api/share-links/", include("apps.sharing.urls")),
+    path("", include("apps.chat.urls")),
 ]
